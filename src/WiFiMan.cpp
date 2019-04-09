@@ -703,6 +703,7 @@ void WiFiMan::handleSave()
 void WiFiMan::handlePortal()
 {
     //do not call requestAuthentication , or the captive portal will not showup in authentication mode
+    /*
     if(AUTHENTICATION)
     {
         //send portal page , display device ip address
@@ -725,6 +726,8 @@ void WiFiMan::handlePortal()
     }
     else
         return handleRoot();
+    */
+    return handleRoot();
 }
 
 void WiFiMan::handleHelp()
