@@ -15,6 +15,8 @@
 #include "DebugHelper.h"
 #include "CusomConfig.h"
 
+#define JSON_BUFFER_SIZE 4096
+
 enum ACTION_TYPE {NONE,CONFIG_SAVED,CLEAR_CONFIG,SYS_RESET};
 enum MODE {INIT,CONNECTING,CLIENT,AP,TIMEOUT};
 
@@ -25,7 +27,20 @@ class WiFiMan
     bool FORCE_AP = false;
     bool MQTT = true;
 
+    //custom config pin and led indicator
     int _configPin = -1;
+    bool _configPinActiveState = LOW;
+    int _indicatorLedPin = -1;
+    bool _indicatorLedOnState = HIGH;
+    unsigned long ledTimer = 0;
+    bool ledState = false;
+    int ledBlinkInterval = 1000;
+
+    // bool extFuncEnabled = false;
+    // void (*extFunc)(void);
+
+    //delay time between connect attempt
+    unsigned int _connect_delay = 500;
 
     //mode
     int _mode = MODE::INIT;
@@ -95,6 +110,8 @@ class WiFiMan
     void handleConfig();
     void handleClearSetting();
     void handleReset();
+    boolean isIp(String str);
+    String toStringIp(IPAddress ip);
     void handleNotFound();
     void handleSave();
     void handlePortal();
@@ -130,8 +147,11 @@ class WiFiMan
     CustomConfig customConfig;
     
     bool saveCustomConfig();
-
     bool handleConnectInterrupt();
+    void setLedState(bool state);
+    void handleIndicatorLed();
+    void resetLedState();
+    //void handleExtFunc();
     
   public:
     WiFiMan(bool authentication);
@@ -149,7 +169,11 @@ class WiFiMan
     //get device mode
     int getStatus();
     //set force config pin
-    void setConfigPin(int pinNumber);
+    void setConfigPin(int pinNumber,bool activeState);
+    //set indicator led pin
+    void setIndicatorLedPin(int pinNumber,bool onState);
+    //set ext extFunc
+    //void setExtFunc(void (*f)(void));
     
     //enable/disable webserver authentication
     void setAuthentication(bool enable);
@@ -175,6 +199,10 @@ class WiFiMan
     void setDefaultMasterPasswd(String passwd);
     //set username to login (this cant be changed later)
     void setMasterUsername(String username);
+    //set delay between connects attempt
+    void setConnectDelay(unsigned int delayms);
+    
+
 
     
     //get SSID
@@ -212,5 +240,6 @@ class WiFiMan
     bool getCustomConfig(CustomConfig *customConf);
     //disable MQTT config in UI
     void disableMqttConfig();
+
 };
 #endif

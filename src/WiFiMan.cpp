@@ -87,13 +87,33 @@ bool WiFiMan::readConfig()
                 std::unique_ptr<char[]> buf(new char[size]);
 
                 configFile.readBytes(buf.get(), size);
-                DynamicJsonBuffer jsonBuffer;
-                JsonObject& json = jsonBuffer.parseObject(buf.get());
-                if(json.success())
+                //DynamicJsonBuffer jsonBuffer;
+                DynamicJsonDocument jsonDoc(JSON_BUFFER_SIZE);
+                //JsonObject& json = jsonBuffer.parseObject(buf.get());
+                auto jsonError = deserializeJson(jsonDoc, buf.get());
+                JsonObject json = jsonDoc.as<JsonObject>();
+
+                if(jsonError)
+                {
+                    DEBUG_MSG("#__ Cannot parse json. Wrong format ?\n");
+                    DEBUG_MSG("#__ Close config.js\n");
+                    configFile.close();
+                    DEBUG_MSG("#__ Unmount FS\n");
+                    SPIFFS.end();
+
+                    DEBUG_MSG("#__ Trying to delete config.js\n");
+                    deleteConfig();
+                    DEBUG_MSG("#__ write template for config.js\n");
+                    writeConfig("","","","","","","","","","");
+                    DEBUG_MSG("#<< readConfig-end\n");
+                    return false;
+                }
+                else
                 {
                     #ifdef DEBUG_ESP_PORT
                         DEBUG_MSG("#__ Json : ");
-                        json.printTo(DEBUG_ESP_PORT);
+                        //json.printTo(DEBUG_ESP_PORT);
+                        serializeJson(json, DEBUG_ESP_PORT);
                         DEBUG_MSG("\n");
                     #endif
                     //parse 
@@ -112,21 +132,6 @@ bool WiFiMan::readConfig()
                     SPIFFS.end();
                     DEBUG_MSG("#<< readConfig-end\n");
                     return true;
-                }
-                else
-                {
-                    DEBUG_MSG("#__ Cannot parse json. Wrong format ?\n");
-                    DEBUG_MSG("#__ Close config.js\n");
-                    configFile.close();
-                    DEBUG_MSG("#__ Unmount FS\n");
-                    SPIFFS.end();
-
-                    DEBUG_MSG("#__ Trying to delete config.js\n");
-                    deleteConfig();
-                    DEBUG_MSG("#__ write template for config.js\n");
-                    writeConfig("","","","","","","","","","");
-                    DEBUG_MSG("#<< readConfig-end\n");
-                    return false;
                 }
             }
             else
@@ -173,18 +178,21 @@ bool WiFiMan::writeConfig(String wifiSsid,String wifiPasswd,String mqttAddr,Stri
     _masterPasswd = masterPasswd;
 
     DEBUG_MSG("#__ Writing config.json\n");
-    DynamicJsonBuffer jsonBuffer;
-    JsonObject& json = jsonBuffer.createObject();
-    json["wifiSsid"] = _wifiSsid;
-    json["wifiPasswd"] = _wifiPasswd;
-    json["mqttAddr"] = _mqttAddr;
-    json["mqttPort"] = _mqttPort;
-    json["mqttUsername"] = _mqttUsername;
-    json["mqttPasswd"] = _mqttPasswd;
-    json["mqttSub"] = _mqttSub;
-    json["mqttPub"] = _mqttPub;
-    json["mqttId"] = _mqttId;
-    json["masterPasswd"] = _masterPasswd;
+    //DynamicJsonBuffer jsonBuffer;
+    DynamicJsonDocument jsonDoc(JSON_BUFFER_SIZE);
+    //JsonObject& json = jsonBuffer.createObject();
+    //JsonObject json = jsonDoc.createObject();
+
+    jsonDoc["wifiSsid"] = _wifiSsid;
+    jsonDoc["wifiPasswd"] = _wifiPasswd;
+    jsonDoc["mqttAddr"] = _mqttAddr;
+    jsonDoc["mqttPort"] = _mqttPort;
+    jsonDoc["mqttUsername"] = _mqttUsername;
+    jsonDoc["mqttPasswd"] = _mqttPasswd;
+    jsonDoc["mqttSub"] = _mqttSub;
+    jsonDoc["mqttPub"] = _mqttPub;
+    jsonDoc["mqttId"] = _mqttId;
+    jsonDoc["masterPasswd"] = _masterPasswd;
     
     
     if(SPIFFS.begin())
@@ -199,7 +207,8 @@ bool WiFiMan::writeConfig(String wifiSsid,String wifiPasswd,String mqttAddr,Stri
             return false;
         }
 
-        json.printTo(configFile);
+        //jsonDoc.printTo(configFile);
+        serializeJson(jsonDoc, configFile);
         DEBUG_MSG("#__ Save successed!\n");
         configFile.close();
         DEBUG_MSG("#__ Unmount FS\n");
@@ -223,6 +232,9 @@ void WiFiMan::start()
     #endif
     DEBUG_MSG("#>> start\n");
 
+    //turn off indicator led
+    setLedState(false);
+
     //get boot mode
     if(!FORCE_AP)
         FORCE_AP = getBootMode();
@@ -237,6 +249,7 @@ void WiFiMan::start()
             //do nothing, leave the work for main program
             DEBUG_MSG("#__ Connected to AP\n");
             DEBUG_MSG("#<< start-end\n");
+            resetLedState();
             return;
         }
         else
@@ -246,6 +259,7 @@ void WiFiMan::start()
             WiFi.disconnect();
             apMode();
             DEBUG_MSG("#<< start-end\n");
+            resetLedState();
             return;
         }
     }
@@ -256,12 +270,16 @@ void WiFiMan::start()
         FORCE_AP = false;
         apMode();
         DEBUG_MSG("#<< start-end\n");
+        resetLedState();
         return;
     }
 }
 
 bool WiFiMan::clientMode()
 {
+    //turn on led during client mode
+    setLedState(true);
+
     DEBUG_MSG("#>> clientMode\n");
     WiFi.mode(WIFI_STA);
     
@@ -272,21 +290,24 @@ bool WiFiMan::clientMode()
     {
         DEBUG_MSG("#__ Invalid config. Exit client mode.\n");
         DEBUG_MSG("#<< clientMode-end\n");
+        setLedState(false);
         return false;
     }
     else
     {
-        DEBUG_MSG("#__ Connectiong to AP using saved config...\n");
+        DEBUG_MSG("#__ Connecting to AP using saved config...\n");
         if(connect(_wifiSsid,_wifiPasswd))
         {
             DEBUG_MSG("#__ Connected to A\nP");
             DEBUG_MSG("#<< clientMode-end\n");
+            setLedState(false);
             return true;
         }
         else
         {
             DEBUG_MSG("#__ Cannot connected to AP\n");
             DEBUG_MSG("#<< clientMode-end\n");
+            setLedState(false);
             return false;
         }
     }
@@ -336,6 +357,10 @@ bool WiFiMan::apMode()
     DEBUG_MSG("#__ Started config potal\n");
     while(millis()-startConfigTime < _configTimeout*60000)
     {
+        //blink the led 
+        handleIndicatorLed();
+        //handleExtFunc();
+
         if(_action)
         {
             //check for action handle
@@ -386,6 +411,7 @@ bool WiFiMan::apMode()
     WiFi.softAPdisconnect(true);
     stopWebServer();
     stopDnsServer();
+    setLedState(false);
     if(!isConnected())
     {
         DEBUG_MSG("#__ Config potal timeout\n");
@@ -401,8 +427,37 @@ bool WiFiMan::apMode()
     }
 }
 
+boolean WiFiMan::isIp(String str)
+{
+    for (size_t i = 0; i < str.length(); i++) {
+        int c = str.charAt(i);
+        if (c != '.' && (c < '0' || c > '9')) {
+            return false;
+        }
+    }
+    return true;
+}
+
+String WiFiMan::toStringIp(IPAddress ip)
+{
+    String res = "";
+    for (int i = 0; i < 3; i++) {
+        res += String((ip >> (8 * i)) & 0xFF) + ".";
+    }
+    res += String(((ip >> 8 * 3)) & 0xFF);
+    return res;
+}
+
 void WiFiMan::handleNotFound()
 {
+    if (!isIp(webServer->hostHeader()) && webServer->hostHeader() != getDnsName()) {
+        Serial.println("Request redirected to captive portal");
+        webServer->sendHeader("Location", String("http://") + toStringIp(webServer->client().localIP()), true);
+        webServer->send(302, "text/plain", "");   // Empty content inhibits Content-length header so we have to close the socket ourselves.
+        webServer->client().stop(); // Stop is needed because we sent no content length
+        return;
+    }
+  
     //Authentication
     if(AUTHENTICATION)
         if(!webServer->authenticate(_httpUsername.c_str(),getApPassword().c_str()))
@@ -887,7 +942,8 @@ bool WiFiMan::connect(String wifiSsid,String wifiPasswd)
     for (int tryCount = 0;(WiFi.status() != WL_CONNECTED) && (tryCount < _maxConnectAttempt);tryCount++) 
     {
         DEBUG_MSG("#__ .\n");
-        delay(500);
+        delay(_connect_delay);
+        //handleExtFunc();
         if(handleConnectInterrupt())
             return false;
     }
@@ -1152,13 +1208,16 @@ bool WiFiMan::saveCustomConfig()
     if(customConfig.count)
     {
         //make json data
-        DynamicJsonBuffer jsonBuffer;
-        JsonObject& json = jsonBuffer.createObject();
+        //DynamicJsonBuffer jsonBuffer;
+        DynamicJsonDocument jsonDoc(JSON_BUFFER_SIZE);
+        //JsonObject& json = jsonBuffer.createObject();
+        //JsonObject& json = jsonDoc.createObject();
+
         String keyList = "";
         for(int i=0;i<customConfig.count;i++)
         {
             DEBUG_MSG("#__ %s : %s \n",customConfig.args[i].key.c_str(),customConfig.args[i].value.c_str());
-            json[customConfig.args[i].key] = customConfig.args[i].value;
+            jsonDoc[customConfig.args[i].key] = customConfig.args[i].value;
             
             //append key list
             keyList.concat(customConfig.args[i].key);
@@ -1166,8 +1225,8 @@ bool WiFiMan::saveCustomConfig()
         }
 
         //write list of key and counter to json
-        json["key-count"] = customConfig.count;
-        json["key-list"] = keyList;
+        jsonDoc["key-count"] = customConfig.count;
+        jsonDoc["key-list"] = keyList;
 
         DEBUG_MSG("#__ Writing customConfig.json\n");
         if(SPIFFS.begin())
@@ -1182,7 +1241,8 @@ bool WiFiMan::saveCustomConfig()
                 return false;
             }
 
-            json.printTo(configFile);
+            //jsonDoc.printTo(configFile);
+            serializeJson(jsonDoc, configFile);
             DEBUG_MSG("#__ Save successed!\n");
             configFile.close();
             DEBUG_MSG("#__ Unmount FS\n");
@@ -1236,12 +1296,23 @@ bool WiFiMan::getCustomConfig(CustomConfig *customConf)
             std::unique_ptr<char[]> buf(new char[size]);
 
             customConfigFile.readBytes(buf.get(), size);
-            DynamicJsonBuffer jsonBuffer;
 
+            //DynamicJsonBuffer jsonBuffer;
             //parse
-            JsonObject& json = jsonBuffer.parseObject(buf.get());
+            DynamicJsonDocument jsonDoc(JSON_BUFFER_SIZE);
+            auto jsonError = deserializeJson(jsonDoc, buf.get());
+            JsonObject json = jsonDoc.as<JsonObject>();
 
-            if(json.success())
+
+            if(jsonError)
+            {
+                customConfigFile.close();
+                SPIFFS.end();
+                DEBUG_MSG("#__ Cannot parse json.\n");
+                DEBUG_MSG("#<< readCustomConfigJson-end\n");
+                return false;
+            }
+            else
             {
                 customConfigFile.close();
                 SPIFFS.end();
@@ -1267,14 +1338,6 @@ bool WiFiMan::getCustomConfig(CustomConfig *customConf)
                 DEBUG_MSG("#<< readCustomConfigJson-end\n");
                 return true;
             }
-            else
-            {
-                customConfigFile.close();
-                SPIFFS.end();
-                DEBUG_MSG("#__ Cannot parse json.\n");
-                DEBUG_MSG("#<< readCustomConfigJson-end\n");
-                return false;
-            }
         }
         else
         {
@@ -1298,18 +1361,79 @@ void WiFiMan::disableMqttConfig()
 }
 
 
-void WiFiMan::setConfigPin(int pinNumber)
+void WiFiMan::setConfigPin(int pinNumber,bool activeState)
 {
     _configPin = pinNumber;
+    _configPinActiveState = activeState;
     if(_configPin >= 0)
-        pinMode(_configPin,INPUT_PULLUP);
+    {
+        if(activeState)
+            pinMode(_configPin,INPUT);
+        else
+            pinMode(_configPin,INPUT_PULLUP);
+    }
 }
 
-
+//handle config button
 bool WiFiMan::handleConnectInterrupt()
 {
     if(_configPin >= 0)
-        if(digitalRead(_configPin)==LOW)
+        if(digitalRead(_configPin) == _configPinActiveState)
             return true;
     return false;
 }
+
+void WiFiMan::setIndicatorLedPin(int pinNumber,bool onState)
+{
+    _indicatorLedPin = pinNumber;
+    _indicatorLedOnState = onState;
+    pinMode(pinNumber,OUTPUT);
+    digitalWrite(pinNumber,!onState);
+}
+
+void WiFiMan::setLedState(bool state)
+{
+    if(_indicatorLedPin>-1)
+        if(state)
+            digitalWrite(_indicatorLedPin,_indicatorLedOnState);
+        else
+            digitalWrite(_indicatorLedPin,!_indicatorLedOnState);
+}
+
+void WiFiMan::handleIndicatorLed()
+{
+    //ledBlinkInterval
+    if(_indicatorLedPin>-1)
+    {
+        if(millis()-ledTimer > ledBlinkInterval)
+        {
+            ledTimer = millis();
+            setLedState(!ledState);
+            ledState = !ledState;
+        }
+    }
+}
+
+void WiFiMan::setConnectDelay(unsigned int delayms)
+{
+    _connect_delay = delayms;
+}
+
+void WiFiMan::resetLedState()
+{
+    if(_indicatorLedPin != -1)
+        pinMode(_indicatorLedPin,INPUT);
+}
+
+
+// void WiFiMan::setExtFunc(void (*f)(void))
+// {
+//     extFuncEnabled = true;
+//     extFunc = f;
+// }
+
+// void WiFiMan::handleExtFunc()
+// {
+//     if(extFuncEnabled)
+//         extFunc();
+// }

@@ -1,8 +1,27 @@
 # WiFiMan + ESP8266OTA
-Wifiman is Wifi manager for ESP8266 with customizable web UI.   
-ESP8266 is a modified version of ESP8266HTTPUpdateServer customizable web UI.   
+WiFiMan is a WiFi manager for ESP8266 with a customizable web UI.   
+ESP8266OTA is a modified version of ESP8266HTTPUpdateServer also with a customizable web UI.    
 
 ## Change logs
+### v1.4.3
+- Bring back OTA update function (Thank to [DerTomm](https://github.com/DerTomm))  
+### v1.4.2
+- Temporarily disable OTA update function due incompatible with newest ESP8266 core(v2.6.x)  
+- Temporarily disable setExtFunction due Soft WDT crash.(Issues #15)   
+### v1.4.1
+- Added void setExtFunc(void (*f)(void)) to execute custom action during config-mode.   
+- Added simple example for SonOff Basic.(experimental)   
+### v1.4.0
+- Migrating from  ArduinoJson 5 to  ArduinoJson 6
+- Added void setConnectDelay(unsigned int delayms) : Set delay between connects attempts.
+### v1.3.2
+- Added void setIndicatorLedPin(int pinNumber,bool onState) function.
+    Set simple led indicator. The led will stay on when the esp trying to connect to the network and blink when the esp in ap(config) mode.
+- Added bool activeState argument for funtion setConfigPin.
+### v1.3.1
+- Added setConfigPin(int pinNumber,bool activeState) function.
+Set auto-connect interrupt pin. Hold this pin in active state for more than 500ms will skip auto-connect process(only works when the device trying to connect to AP using saved config). This function must be called before .start()
+- Added bool activeState argument for funtion setConfigPin.   
 ### v1.3.0
 - Removed serial control liblary and it's functions.
 - Optimized memory usage.
@@ -20,7 +39,7 @@ Some sample of Theme.h are available in themes folder.
 - Method 2 : Manual download/clone this repo and put in arduino library folder
 
 ## Require library
-- <a href="https://github.com/bblanchon/ArduinoJson">bblanchon's ArduinoJson v5.13.2</a>
+- <a href="https://github.com/bblanchon/ArduinoJson">bblanchon's ArduinoJson</a>
 
 ## About password setting
 - Soft AP password : Password of ESP8266 when in AP mode .Can be set with setApPasswd("yourPassword").If default password is not set, AP will fireup without password.
@@ -62,6 +81,8 @@ Some sample of Theme.h are available in themes folder.
     Add custom config parameter to config page.
 - void disableMqttConfig()   
     Disable MQTT configuration in web UI.
+- void setConnectDelay(unsigned int delayms)   
+    set delay between connects attempts. The default value is 500ms.
   
 ### Get config parameters
 - String getWifiSsid();   
@@ -96,20 +117,23 @@ Some sample of Theme.h are available in themes folder.
     Get custom config parameters. Return true if success, false if there is no custom config or cannot read customConfig file.
 
 ### Controls
-- void start();   
-    Start WiFiMan , all config API must be called before this function.
-- bool deleteConfig();   
+
+- void start();
+    Start WiFiMan , all config APIs must be called before this function.
+- bool deleteConfig();
     Delete saved config file (config.json).This function must be called before call start().
-- void forceApMode();   
+- void forceApMode();
     Force device into Soft Access Point mode without trying to connect to saved config.
-- void setConfigPin(int pinNumber);   
-    Set auto-connect interrupt pin. Pull this pin down for more than 500ms will skip auto-connect process(only works when the device trying to connect to AP using saved config). This function must be called before .start()
+- void setConfigPin(int pinNumber,bool activeState);
+    Set auto-connect interrupt pin. Hold this pin in active state for more than 500ms will skip auto-connect process(only works when the device trying to connect to AP using saved config). This function must be called before .start()
+- void setIndicatorLedPin(int pinNumber,bool onState);
+    Set led indicator. The led will stay on when the esp trying to connect to the network and blink when the esp in ap(config) mode. This pin can be re-use later.
 - void disconnect();  
     Force disconnect from AP.
-- bool isConnected();   
+- bool isConnected();
     Check connection status.
-- int getStatus();   
-    Get device status   
+- int getStatus();
+    Get device status
     - 0 INIT   
     - 1 CONNECTING : AP mode,Trying to connect to AP   
     - 2 CLIENT : Client mode,connected to AP   
@@ -141,8 +165,8 @@ There are 4 way to reconfig ESP8266 after connected to Access Point.
 Delete saved config will force esp8266 into config mode. This function must be called before .start().
 - .forceApMode()   
 Force esp8266 into config mode. This function is same as deleteConfig(), but will not delete saved config. This function must be called before .start().
-- .setConfigPin(int pinNumber)   
-Set auto-connect interrupt pin. Pull this pin down for more than 500ms will skip auto-connect process(only works when the device trying to connect to AP using saved config). This function must be called before .start()
+- .setConfigPin(int pinNumber,bool activeState)   
+Set auto-connect interrupt pin. Hold this pin in active state for more than 500ms will skip auto-connect process(only works when the device trying to connect to AP using saved config). This function must be called before .start()
 - rebootToApMode()   
 Reboot esp8266 and go to config mode.This method is not a member of WiFiMan class and can be called anywhere even when WiFiMan is out of scoop.
 Caution : rebootToApMode use ESP.restart() to reboot the device . ESP.restart() may cause ESP8266 to crash at the first restart after serial flashing.For more information , please check [ESP8266 Issues](https://github.com/esp8266/Arduino/issues/1722)   
